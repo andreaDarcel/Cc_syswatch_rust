@@ -1,0 +1,29 @@
+name: Rust Integration Continue
+
+# Quand est-ce que le robot doit se lancer ?
+on:
+  push:
+    branches: [ main ]  # Dès que quelqu'un pousse sur la branche main
+  pull_request:
+    branches: [ main ]  # Dès que quelqu'un ouvre une PR vers main
+
+jobs:
+  verification:
+    runs-on: ubuntu-latest # Le robot utilise un ordinateur sous Linux
+
+    steps:
+      # 1. Le robot télécharge le code du dépôt
+      - name: Recupérer le code
+        uses: actions/checkout@v4
+
+      # 2. Le robot installe Rust
+      - name: Installer la toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # 3. Le robot compile le projet
+      - name: Compiler le projet
+        run: cargo build --verbose
+
+      # 4. Le robot lance les tests
+      - name: Executer les tests
+        run: cargo test --verbose
