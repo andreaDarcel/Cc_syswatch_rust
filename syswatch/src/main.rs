@@ -1,4 +1,6 @@
 use std::fmt;
+mod collector;
+use collector::collect_snapshot;
 
 #[derive(Debug, Clone)]
 pub struct CpuInfo {
@@ -71,5 +73,10 @@ fn main() {
             ProcessInfo { pid: 234, name: "bash".into(), cpu: 2.5, mem: 20480 },
         ],
     };
+
+    match collect_snapshot() {
+        Ok(snap) => println!("{}", snap),
+        Err(e) => eprintln!("Collect error: {}", e),
+    }
     println!("{}", snapshot);
 }
