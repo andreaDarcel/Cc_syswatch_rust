@@ -1,82 +1,58 @@
-use std::fmt;
 mod collector;
-use collector::collect_snapshot;
+mod formatter;
+mod server;
 
+use std::sync::{Arc, Mutex};
+
+/// Types partagés au niveau racine du crate,
+/// pour que `use crate::SystemSnapshot;` fonctionne dans les sous-modules.
 #[derive(Debug, Clone)]
 pub struct CpuInfo {
     pub name: String,
-    pub usage: f32,
-}
-
-impl fmt::Display for CpuInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:<10} {:>6.2}%", self.name, self.usage)
-    }
+    pub usage_percent: f32,
 }
 
 #[derive(Debug, Clone)]
 pub struct MemInfo {
-    pub total: u64,
-    pub used: u64,
-}
-
-impl fmt::Display for MemInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let used_pct = (self.used as f64 / self.total as f64) * 100.0;
-        write!(f, "RAM: {}/{} MB ({:.1}%)", self.used / 1024 / 1024, self.total / 1024 / 1024, used_pct)
-    }
+    pub total: u64, // en kB
+    pub used: u64,  // en kB
 }
 
 #[derive(Debug, Clone)]
-pub struct ProcessInfo {
-    pub pid: i32,
+pub struct ProcInfo {
+    pub pid: u32,
     pub name: String,
-    pub cpu: f32,
-    pub mem: u64,
-}
-
-impl fmt::Display for ProcessInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:>6} {:<20} {:>6.2}% {:>8} KB", self.pid, self.name, self.cpu, self.mem / 1024)
-    }
+    pub mem_kb: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct SystemSnapshot {
     pub cpus: Vec<CpuInfo>,
     pub mem: MemInfo,
-    pub processes: Vec<ProcessInfo>,
+    pub processes: Vec<ProcInfo>,
 }
 
-impl fmt::Display for SystemSnapshot {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "CPUs:")?;
-        for c in &self.cpus { writeln!(f, "  {}", c)?; }
-        writeln!(f, "")?;
-        writeln!(f, "{}", self.mem)?;
-        writeln!(f, "")?;
-        writeln!(f, "Top processes:")?;
-        for p in &self.processes { writeln!(f, "  {}", p)?; }
-        Ok(())
+impl Default for SystemSnapshot {
+    fn default() -> Self {
+        SystemSnapshot {
+            cpus: vec![],
+            mem: MemInfo { total: 0, used: 0 },
+            processes: vec![],
+        }
     }
 }
 
 fn main() {
-    let snapshot = SystemSnapshot {
-        cpus: vec![
-            CpuInfo { name: "cpu0".into(), usage: 12.3 },
-            CpuInfo { name: "cpu1".into(), usage: 4.7 },
-        ],
-        mem: MemInfo { total: 8 * 1024 * 1024 * 1024u64, used: 3 * 1024 * 1024 * 1024u64 },
-        processes: vec![
-            ProcessInfo { pid: 1, name: "init".into(), cpu: 0.1, mem: 10240 },
-            ProcessInfo { pid: 234, name: "bash".into(), cpu: 2.5, mem: 20480 },
-        ],
-    };
+    // Snapshot initial (Default::default() si la collecte échoue)
+    let initial = collector::collect_snapshot().unwrap_or_default();
+    let shared = Arc::new(Mutex::new(initial));
 
-    match collect_snapshot() {
-        Ok(snap) => println!("{}", snap),
-        Err(e) => eprintln!("Collect error: {}", e),
+    // Étape 4a : thread de rafraîchissement toutes les 5 s
+    server::start_refresher(Arc::clone(&shared));
+
+    // Étape 4b : serveur TCP bloquant sur 0.0.0.0:7878
+    if let Err(e) = server::start_server(shared) {
+        eprintln!("Erreur fatale du serveur : {}", e);
+        std::process::exit(1);
     }
-    println!("{}", snapshot);
 }
